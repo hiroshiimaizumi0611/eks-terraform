@@ -127,8 +127,6 @@ provider "kubernetes" {
     command     = "aws"
     args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name]
   }
-
-  # EKS が出来てから ServiceAccount を作りに行くよう保証
 }
    
 module "iam_eks_alb_controller" { 
