@@ -17,6 +17,7 @@ module "eks" {
   cluster_version = "1.29"
   subnet_ids      = module.vpc.private_subnets
   vpc_id          = module.vpc.vpc_id
+  cluster_endpoint_public_access = true
 
   eks_managed_node_groups = {
     default = {
@@ -86,7 +87,7 @@ resource "aws_security_group" "rds_oracle" {
 resource "aws_db_instance" "oracle" {
   identifier             = "oracle-db"
   engine                 = "oracle-se2-cdb"
-  engine_version         = "21.0.0.0.ru-2023-10.rur-2023-10.r1"
+  engine_version         = "21.0.0.0.ru-2025-04.rur-2025-04.r1"
   instance_class         = "db.m5.large"
   allocated_storage      = 100
   max_allocated_storage  = 500
@@ -115,6 +116,20 @@ resource "aws_db_instance" "oracle" {
 data "aws_eks_cluster" "eks" {
    name = module.eks.cluster_name
 }
+
+provider "kubernetes" {
+  host                   = module.eks.cluster_endpoint
+  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+
+  # EKS 用トークンを自動取得
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "aws"
+    args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name]
+  }
+
+  # EKS が出来てから ServiceAccount を作りに行くよう保証
+}
    
 module "iam_eks_alb_controller" { 
   source = "terraform-aws-modules/iam/aws//modules/iam-assumable-role-with-oidc" 
@@ -122,7 +137,7 @@ module "iam_eks_alb_controller" {
   create_role = true 
   role_name = "${var.cluster_name}-alb-controller" 
   provider_url = replace(data.aws_eks_cluster.eks.identity[0].oidc[0].issuer, "https://", "") 
-  role_policy_arns = ["arn:aws:iam::aws:policy/AWSLoadBalancerControllerIAMPolicy"] 
+  role_policy_arns = ["arn:aws:iam::aws:policy/AmazonEKSLoadBalancingPolicy"] 
   oidc_fully_qualified_subjects = ["system:serviceaccount:kube-system:aws-load-balancer-controller"]
 }
     
@@ -137,28 +152,28 @@ resource "kubernetes_service_account" "alb_controller" {
 
 
 # # Helm provider設定（EKS情報流用）
-# provider "helm" {
-#   kubernetes {
-#     host                   = module.eks.cluster_endpoint
-#     cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
-#     exec {
-#       api_version = "client.authentication.k8s.io/v1beta1"
-#       command     = "aws"
-#       args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name]
-#     }
-#   }
-# }
+provider "helm" {
+  kubernetes {
+    host                   = module.eks.cluster_endpoint
+    cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+    exec {
+      api_version = "client.authentication.k8s.io/v1beta1"
+      command     = "aws"
+      args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name]
+    }
+  }
+}
 
-# resource "helm_release" "argocd" {
-#   name             = "argocd"
-#   namespace        = "argocd"
-#   chart            = "argo-cd"
-#   repository       = "https://argoproj.github.io/argo-helm"
-#   version          = "6.7.14"
-#   create_namespace = true
+resource "helm_release" "argocd" {
+  name             = "argocd"
+  namespace        = "argocd"
+  chart            = "argo-cd"
+  repository       = "./"
+  version          = "5.46.4"
+  create_namespace = true
 
-#   set {
-#     name  = "server.service.type"
-#     value = "LoadBalancer"
-#   }
-# }
+  set {
+    name  = "server.service.type"
+    value = "LoadBalancer"
+  }
+}
