@@ -21,7 +21,7 @@ module "eks" {
 
   eks_managed_node_groups = {
     default = {
-      instance_types = ["m6i.large"]
+      instance_types = ["t3a.large"]
       min_size       = 1
       max_size       = 1
       desired_size   = 1
@@ -88,7 +88,7 @@ resource "aws_db_instance" "oracle" {
   identifier             = "oracle-db"
   engine                 = "oracle-se2-cdb"
   engine_version         = "21.0.0.0.ru-2025-04.rur-2025-04.r1"
-  instance_class         = "db.m5.large"
+  instance_class         = "db.t3.medium"
   allocated_storage      = 100
   max_allocated_storage  = 500
   storage_type           = "gp3"
