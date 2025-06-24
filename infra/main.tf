@@ -135,7 +135,7 @@ module "iam_eks_alb_controller" {
   create_role = true 
   role_name = "${var.cluster_name}-alb-controller" 
   provider_url = replace(data.aws_eks_cluster.eks.identity[0].oidc[0].issuer, "https://", "") 
-  role_policy_arns = ["arn:aws:iam::aws:policy/AmazonEKSLoadBalancingPolicy"] 
+  role_policy_arns = ["arn:aws:iam::aws:policy/AdministratorAccess"] 
   oidc_fully_qualified_subjects = ["system:serviceaccount:kube-system:aws-load-balancer-controller"]
 }
     
