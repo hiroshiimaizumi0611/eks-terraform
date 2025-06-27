@@ -13,8 +13,8 @@ variable "vpc_cidr" {
   default     = "10.1.0.0/16"
 }
 
-variable "oracle_db_password" {
-  description = "Master password for Oracle DB"
-  type        = string
-  sensitive   = true
-}
+# variable "oracle_db_password" {
+#   description = "Master password for Oracle DB"
+#   type        = string
+#   sensitive   = true
+# }
