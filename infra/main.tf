@@ -94,7 +94,7 @@ resource "aws_secretsmanager_secret" "redis_secret" {
 resource "aws_secretsmanager_secret_version" "redis_secret_version" {
   secret_id = aws_secretsmanager_secret.redis_secret.id
   secret_string = jsonencode({
-    host     = aws_elasticache_serverless_cache.redis.endpoint
+    host     = aws_elasticache_serverless_cache.redis.endpoint[0].address
     port     = 6379
     username = aws_elasticache_user.redis_user.user_name
     password = random_password.redis_acl_pwd.result
