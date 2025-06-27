@@ -102,55 +102,83 @@ resource "aws_secretsmanager_secret_version" "redis_secret_version" {
 }
 
 # 3-B : Oracle RDS
-# resource "aws_db_subnet_group" "oracle" {
-#   name       = "oracle-db-subnet-group"
-#   subnet_ids = module.vpc.private_subnets
-# }
+resource "aws_db_subnet_group" "oracle" {
+  name       = "oracle-db-subnet-group"
+  subnet_ids = module.vpc.private_subnets
+}
 
-# resource "aws_security_group" "rds_oracle" {
-#   name        = "rds-oracle-sg"
-#   description = "Security group for RDS Oracle"
-#   vpc_id      = module.vpc.vpc_id
+resource "aws_security_group" "rds_oracle" {
+  name        = "rds-oracle-sg"
+  description = "Security group for RDS Oracle"
+  vpc_id      = module.vpc.vpc_id
 
-#   ingress {
-#     from_port   = 1521
-#     to_port     = 1521
-#     protocol    = "tcp"
-#     cidr_blocks = module.vpc.private_subnets_cidr_blocks
-#   }
-#   egress {
-#     from_port   = 0
-#     to_port     = 0
-#     protocol    = "-1"
-#     cidr_blocks = module.vpc.private_subnets_cidr_blocks
-#   }
-# }
+  ingress {
+    from_port   = 1521
+    to_port     = 1521
+    protocol    = "tcp"
+    cidr_blocks = module.vpc.private_subnets_cidr_blocks
+  }
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = module.vpc.private_subnets_cidr_blocks
+  }
+}
 
-# resource "aws_db_instance" "oracle" {
-#   identifier            = "oracle-db"
-#   engine                = "oracle-se2-cdb"
-#   engine_version        = "21.0.0.0.ru-2025-04.rur-2025-04.r1"
-#   instance_class        = "db.t3.small"
-#   allocated_storage     = 100
-#   max_allocated_storage = 500
-#   storage_type          = "gp3"
-#   storage_encrypted     = true
-#   license_model         = "license-included"
+resource "aws_db_instance" "oracle" {
+  identifier            = "oracle-db"
+  engine                = "oracle-se2-cdb"
+  engine_version        = "21.0.0.0.ru-2025-04.rur-2025-04.r1"
+  instance_class        = "db.t3.small"
+  allocated_storage     = 100
+  max_allocated_storage = 500
+  storage_type          = "gp3"
+  storage_encrypted     = true
+  license_model         = "license-included"
 
-#   username                    = "admin"
-#   manage_master_user_password = true
+  username                    = "admin"
+  manage_master_user_password = true
 
-#   db_name                = "ORCL"
-#   port                   = 1521
-#   db_subnet_group_name   = aws_db_subnet_group.oracle.name
-#   vpc_security_group_ids = [aws_security_group.rds_oracle.id]
+  db_name                = "ORCL"
+  port                   = 1521
+  db_subnet_group_name   = aws_db_subnet_group.oracle.name
+  vpc_security_group_ids = [aws_security_group.rds_oracle.id]
 
-#   skip_final_snapshot     = true
-#   publicly_accessible     = false
-#   deletion_protection     = false
-#   backup_retention_period = 7
-#   backup_window           = "03:00-04:00"
-# }
+  skip_final_snapshot     = true
+  publicly_accessible     = false
+  deletion_protection     = false
+  backup_retention_period = 7
+  backup_window           = "03:00-04:00"
+}
+
+data "aws_secretsmanager_secret_version" "rds" {
+  secret_id = aws_db_instance.oracle.master_user_secret[0].secret_arn
+}
+
+resource "aws_secretsmanager_secret" "rds_secret" {
+  name = "rds_connection_details"
+}
+
+resource "aws_secretsmanager_secret_version" "db_connection_details" {
+  secret_id = aws_secretsmanager_secret.rds_secret.id
+
+  secret_string = jsonencode(
+    merge(
+      jsondecode(data.aws_secretsmanager_secret_version.rds.secret_string),
+      {
+        "host"                 = aws_db_instance.oracle.address
+        "port"                 = aws_db_instance.oracle.port
+        "dbname"               = aws_db_instance.oracle.db_name
+        "dbInstanceIdentifier" = aws_db_instance.oracle.identifier
+      }
+    )
+  )
+
+  depends_on = [
+    aws_db_instance.oracle
+  ]
+}
 
 ###############################################################################
 # ■ 4. ECR
@@ -300,9 +328,11 @@ data "aws_iam_policy_document" "assume_oidc" {
 resource "aws_iam_role" "eso" {
   name               = local.role_name
   assume_role_policy = data.aws_iam_policy_document.assume_oidc.json
-  managed_policy_arns = [
-    "arn:aws:iam::aws:policy/SecretsManagerReadWrite"
-  ]
+}
+
+resource "aws_iam_role_policy_attachment" "secrets_manager_read_write" {
+  role       = aws_iam_role.eso.name
+  policy_arn = "arn:aws:iam::aws:policy/SecretsManagerReadWrite"
 }
 
 ########################
