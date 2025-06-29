@@ -288,6 +288,83 @@ resource "helm_release" "alb_controller" {
   depends_on = [kubernetes_service_account.alb_controller, aws_iam_role_policy_attachment.alb_managed]
 }
 
+###############################################################################
+# ■ 7. Bastion（踏み台）サーバ & SSM
+###############################################################################
+
+# Bastionサーバ用のセキュリティグループ（RDSに接続できるように）
+resource "aws_security_group" "bastion" {
+  name   = "bastion-sg"
+  vpc_id = module.vpc.vpc_id
+
+  ingress {
+    from_port       = 1521
+    to_port         = 1521
+    protocol        = "tcp"
+    security_groups = [aws_security_group.rds_oracle.id]
+    description     = "Allow Oracle RDS connection"
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+# SSM用のIAMロール
+resource "aws_iam_role" "bastion" {
+  name = "bastion-ssm-role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "ec2.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "bastion_ssm" {
+  role       = aws_iam_role.bastion.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+# Bastion用のEC2インスタンス
+resource "aws_instance" "bastion" {
+  ami                    = data.aws_ami.amazon_linux.id # 後述
+  instance_type          = "t3.micro"
+  subnet_id              = module.vpc.private_subnets[0]
+  vpc_security_group_ids = [aws_security_group.bastion.id]
+  iam_instance_profile   = aws_iam_instance_profile.bastion.name
+
+  tags = {
+    Name = "bastion"
+  }
+}
+
+# EC2にIAMロールを紐付け
+resource "aws_iam_instance_profile" "bastion" {
+  name = "bastion-ssm-profile"
+  role = aws_iam_role.bastion.name
+}
+
+# Amazon Linux2のAMI取得
+data "aws_ami" "amazon_linux" {
+  most_recent = true
+  owners      = ["amazon"]
+  filter {
+    name   = "name"
+    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
+  }
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
+
 ########################
 # 0. ESO共通ローカル値
 ########################
