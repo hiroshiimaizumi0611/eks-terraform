@@ -98,6 +98,7 @@ resource "aws_secretsmanager_secret_version" "redis_secret_version" {
     port     = 6379
     username = aws_elasticache_user.redis_user.user_name
     password = random_password.redis_acl_pwd.result
+    ssl      = true
   })
 }
 
