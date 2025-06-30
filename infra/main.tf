@@ -180,6 +180,13 @@ resource "aws_secretsmanager_secret_version" "db_connection_details" {
   ]
 }
 
+resource "aws_secretsmanager_secret" "jwt_secret" {
+  name = "jwt-secret"
+}
+resource "aws_secretsmanager_secret_version" "jwt_secret_version" {
+  secret_id     = aws_secretsmanager_secret.jwt_secret.id
+  secret_string = jsonencode({ secret = "this_is_a_very_long_random_secret_key_32byte!" })
+}
 ###############################################################################
 # ■ 4. ECR
 ###############################################################################
