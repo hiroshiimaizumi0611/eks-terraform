@@ -188,6 +188,56 @@ resource "aws_secretsmanager_secret_version" "jwt_secret_version" {
   secret_id     = aws_secretsmanager_secret.jwt_secret.id
   secret_string = jsonencode({ secret = "this_is_a_very_long_random_secret_key_32byte!" })
 }
+
+###############################################################################
+# ■ ALB + Route53 + ACM (HTTPSで estimate-app.com に対応)
+###############################################################################
+
+# 既存Route53ホストゾーン参照
+data "aws_route53_zone" "main" {
+  name = "estimate-app.com."
+}
+
+# ACM証明書を発行（バリデーションはDNS）
+resource "aws_acm_certificate" "cert" {
+  domain_name               = "estimate-app.com"
+  validation_method         = "DNS"
+  subject_alternative_names = ["www.estimate-app.com"]
+}
+
+resource "aws_route53_record" "cert_validation" {
+  for_each = {
+    for dvo in aws_acm_certificate.cert.domain_validation_options : dvo.domain_name => {
+      name   = dvo.resource_record_name
+      type   = dvo.resource_record_type
+      record = dvo.resource_record_value
+    }
+  }
+  zone_id = data.aws_route53_zone.main.zone_id
+  name    = each.value.name
+  type    = each.value.type
+  records = [each.value.record]
+  ttl     = 60
+}
+
+resource "aws_acm_certificate_validation" "cert" {
+  certificate_arn         = aws_acm_certificate.cert.arn
+  validation_record_fqdns = [for record in aws_route53_record.cert_validation : record.fqdn]
+}
+
+# Route53 apex(Alias) レコード → ALB
+resource "aws_route53_record" "alb_alias" {
+  zone_id = data.aws_route53_zone.main.zone_id
+  name    = "estimate-app.com"
+  type    = "A"
+  alias {
+    name                   = "k8s-frontend-frontend-b1479b5087-1513249911.ap-northeast-1.elb.amazonaws.com"
+    zone_id                = "Z14GRHDCWA56QT"
+    evaluate_target_health = true
+  }
+}
+
+
 ###############################################################################
 # ■ 4. ECR
 ###############################################################################
@@ -461,3 +511,29 @@ resource "helm_release" "external_secrets" {
 
   depends_on = [kubernetes_service_account.eso]
 }
+
+###############################################################################
+# ■ 8. Cognito (OIDC認証用)
+###############################################################################
+
+resource "aws_cognito_user_pool" "main" {
+  name = "moop-user-pool"
+
+  # 必要に応じてパスワードポリシーや属性追加
+  auto_verified_attributes = ["email"]
+  username_attributes      = ["email"]
+}
+
+resource "aws_cognito_user_pool_client" "main" {
+  name         = "moop-app-client"
+  user_pool_id = aws_cognito_user_pool.main.id
+
+  generate_secret                      = false
+  allowed_oauth_flows                  = ["code"]
+  allowed_oauth_scopes                 = ["openid", "email", "profile"]
+  allowed_oauth_flows_user_pool_client = true
+  callback_urls                        = ["https://estimate-app.com/callback"]
+  logout_urls                          = ["https://estimate-app.com/logout"]
+  supported_identity_providers         = ["COGNITO"]
+}
+
