@@ -612,3 +612,62 @@ resource "aws_s3_object" "sorry_page_html" {
 output "sorry_page_website_url" {
   value = aws_s3_bucket_website_configuration.sorry_page.website_endpoint
 }
+
+###############################################################################
+# ■ Lambda change listner
+###############################################################################
+
+resource "aws_iam_role" "alb_lambda_role" {
+  name = "alb-listener-switch-lambda"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Effect = "Allow",
+      Principal = {
+      Service = "lambda.amazonaws.com" },
+    Action = "sts:AssumeRole" }]
+  })
+}
+
+resource "aws_iam_policy" "alb_lambda_policy" {
+  name = "alb-lambda-policy"
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Effect = "Allow",
+      Action = [
+        "elasticloadbalancing:CreateRule",
+        "elasticloadbalancing:DeleteRule",
+        "elasticloadbalancing:ModifyRule",
+        "elasticloadbalancing:DescribeRules",
+        "elasticloadbalancing:DescribeListeners"
+      ],
+      Resource = "*" }, {
+      Effect   = "Allow",
+      Action   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"],
+    Resource = "*" }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "alb_lambda_attach" {
+  role       = aws_iam_role.alb_lambda_role.name
+  policy_arn = aws_iam_policy.alb_lambda_policy.arn
+}
+
+resource "aws_lambda_function" "alb_maintenance_switch" {
+  function_name = "alb-maintenance-switch"
+  filename      = "lambda/maintenance_switch.zip"
+  handler       = "maintenance_switch.lambda_handler"
+  runtime       = "python3.12"
+  role          = aws_iam_role.alb_lambda_role.arn
+  timeout       = 60
+
+  environment {
+    variables = {
+      LISTENER_ARN   = "arn:aws:elasticloadbalancing:ap-northeast-1:635566485987:listener/app/k8s-frontend-frontend-b1479b5087/70020d4469ce5ae6/95095c711102e8e7"
+      SORRYPAGE_HOST = "estimate-app-sorrypage.s3.ap-northeast-1.amazonaws.com"
+      HOST_HEADER    = "estimate-app.com"
+      RULE_PRIORITY  = "1"
+    }
+  }
+}
